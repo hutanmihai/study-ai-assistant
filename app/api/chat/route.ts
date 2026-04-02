@@ -7,20 +7,7 @@ import { StoredMessage } from "@/lib/types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
-function detectAgent(message: string): "flashcard" | "quiz" | "generalist" {
-  const lower = message.toLowerCase();
-  if (lower.includes("flashcard") || lower.includes("flash card"))
-    return "flashcard";
-  if (
-    lower.includes("quiz") ||
-    lower.includes("test me") ||
-    lower.includes("practice question")
-  )
-    return "quiz";
-  return "generalist";
-}
-
-async function fileToBase64(file: File): Promise<string> {
+export async function fileToBase64(file: File): Promise<string> {
   const buffer = await file.arrayBuffer();
   const bytes = new Uint8Array(buffer);
   let binary = "";
@@ -30,7 +17,7 @@ async function fileToBase64(file: File): Promise<string> {
   return btoa(binary);
 }
 
-async function generateChatName(
+export async function generateChatName(
   userMsg: string,
   assistantMsg: string
 ): Promise<string> {
@@ -55,7 +42,7 @@ async function generateChatName(
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function pushMessage(chatId: string, msg: StoredMessage, extraSet: Record<string, unknown> = {}, db: any) {
+export async function pushMessage(chatId: string, msg: StoredMessage, extraSet: Record<string, unknown> = {}, db: any) {
   await db.collection("chats").updateOne(
     { _id: new ObjectId(chatId) },
     {
@@ -64,6 +51,32 @@ async function pushMessage(chatId: string, msg: StoredMessage, extraSet: Record<
       $set: { updatedAt: new Date().toISOString(), ...extraSet },
     }
   );
+}
+
+async function routeRequest(message: string): Promise<{ generateFlashcards: boolean; generateQuiz: boolean }> {
+  try {
+    const schema = {
+      type: "object",
+      properties: {
+        generateFlashcards: { type: "boolean" },
+        generateQuiz: { type: "boolean" },
+      },
+      required: ["generateFlashcards", "generateQuiz"],
+    };
+    const resp = await ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: [{ role: "user", parts: [{ text: message }] }],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: schema,
+        systemInstruction:
+          "You are a routing agent for a study assistant. Analyse the user message and decide: should flashcards be generated (generateFlashcards: true) and/or should a quiz be generated (generateQuiz: true)? Set to true only when the user explicitly asks for it or it is strongly implied (e.g. 'make flashcards', 'quiz me', 'test me', 'create cards'). Default to false when the user is just asking a question or requesting an explanation.",
+      },
+    });
+    return JSON.parse(resp.text ?? "{}");
+  } catch {
+    return { generateFlashcards: false, generateQuiz: false };
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -88,7 +101,7 @@ export async function POST(req: NextRequest) {
     if (!chat)
       return NextResponse.json({ error: "Chat not found" }, { status: 404 });
 
-    // Resolve PDF: new upload takes priority, else use stored one
+    // Resolve PDF
     let pdfBase64: string | null = null;
     let pdfName: string | null = null;
 
@@ -97,185 +110,91 @@ export async function POST(req: NextRequest) {
       pdfName = pdfFile.name;
       await db.collection("chats").updateOne(
         { _id: new ObjectId(chatId) },
-        {
-          $set: {
-            activePdfBase64: pdfBase64,
-            activePdfName: pdfName,
-            updatedAt: new Date().toISOString(),
-          },
-        }
+        { $set: { activePdfBase64: pdfBase64, activePdfName: pdfName, updatedAt: new Date().toISOString() } }
       );
     } else if (chat.activePdfBase64) {
       pdfBase64 = chat.activePdfBase64;
       pdfName = chat.activePdfName ?? null;
     }
 
-    // Build Gemini parts
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const parts: any[] = [];
-    if (pdfBase64) {
-      parts.push({
-        inlineData: { mimeType: "application/pdf", data: pdfBase64 },
-      });
-    }
+    if (pdfBase64) parts.push({ inlineData: { mimeType: "application/pdf", data: pdfBase64 } });
     if (message) parts.push({ text: message });
 
     if (parts.length === 0)
-      return NextResponse.json(
-        { error: "No message or PDF provided" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "No message or PDF provided" }, { status: 400 });
 
     const isFirstMessage = (chat.messageCount ?? 0) === 0;
-    const agentType = detectAgent(message);
 
-    // Save user message
-    const userMsg: StoredMessage = {
-      id: new ObjectId().toString(),
-      role: "user",
-      content: message,
-      type: "text",
-      pdfName: pdfName ?? undefined,
-      createdAt: new Date().toISOString(),
-    };
-    await pushMessage(chatId, userMsg, {}, db);
+    // Run routing + save user message in parallel
+    const [flags] = await Promise.all([
+      routeRequest(message),
+      pushMessage(
+        chatId,
+        {
+          id: new ObjectId().toString(),
+          role: "user",
+          content: message,
+          type: "text",
+          pdfName: pdfName ?? undefined,
+          createdAt: new Date().toISOString(),
+        },
+        {},
+        db
+      ),
+    ]);
 
-    // ── GENERALIST: streaming ───────────────────────────────────────────────
-    if (agentType === "generalist") {
-      const encoder = new TextEncoder();
-      let fullText = "";
+    // Always stream generalist
+    const encoder = new TextEncoder();
+    let fullText = "";
 
-      const readable = new ReadableStream({
-        async start(controller) {
-          try {
-            const streamResult = await ai.models.generateContentStream({
-              model: "gemini-2.0-flash",
-              contents: [{ role: "user", parts }],
-              config: {
-                systemInstruction:
-                  "You are a helpful study assistant. Answer questions based on the provided course material. If no PDF is provided, answer from general knowledge but suggest uploading course material for more accurate answers. Use markdown for structure where helpful.",
-              },
-            });
+    const readable = new ReadableStream({
+      async start(controller) {
+        try {
+          const streamResult = await ai.models.generateContentStream({
+            model: "gemini-2.0-flash",
+            contents: [{ role: "user", parts }],
+            config: {
+              systemInstruction:
+                "You are a helpful study assistant. Answer questions based on the provided course material. If no PDF is provided, answer from general knowledge but suggest uploading course material for more accurate answers. Use markdown for structure where helpful.",
+            },
+          });
 
-            for await (const chunk of streamResult) {
-              const text = chunk.text ?? "";
-              if (text) {
-                fullText += text;
-                controller.enqueue(encoder.encode(text));
-              }
+          for await (const chunk of streamResult) {
+            const text = chunk.text ?? "";
+            if (text) {
+              fullText += text;
+              controller.enqueue(encoder.encode(text));
             }
-
-            // Persist assistant message (stream still open — safe in serverless)
-            const assistantMsg: StoredMessage = {
-              id: new ObjectId().toString(),
-              role: "assistant",
-              content: fullText,
-              type: "text",
-              createdAt: new Date().toISOString(),
-            };
-            const extraSet: Record<string, unknown> = {};
-            if (isFirstMessage) {
-              extraSet.name = await generateChatName(message, fullText);
-            }
-            await pushMessage(chatId, assistantMsg, extraSet, db);
-          } finally {
-            controller.close();
           }
-        },
-      });
 
-      return new Response(readable, {
-        headers: {
-          "Content-Type": "text/plain; charset=utf-8",
-          "X-Chat-Id": chatId,
-          "Cache-Control": "no-cache",
-        },
-      });
-    }
-
-    // ── FLASHCARD / QUIZ: structured output ────────────────────────────────
-    const isFlashcard = agentType === "flashcard";
-
-    const flashcardSchema = {
-      type: "object",
-      properties: {
-        flashcards: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              front: { type: "string" },
-              back: { type: "string" },
-            },
-            required: ["front", "back"],
-          },
-        },
-      },
-      required: ["flashcards"],
-    };
-
-    const quizSchema = {
-      type: "object",
-      properties: {
-        questions: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              question: { type: "string" },
-              options: { type: "array", items: { type: "string" } },
-              correctIndex: { type: "number" },
-              explanation: { type: "string" },
-            },
-            required: ["question", "options", "correctIndex", "explanation"],
-          },
-        },
-      },
-      required: ["questions"],
-    };
-
-    const extraInstruction = isFlashcard
-      ? "Generate 8-12 comprehensive flashcards covering key concepts, definitions, and important facts."
-      : "Generate 5 multiple-choice quiz questions. Each must have exactly 4 options, a correctIndex (0-3), and a brief explanation.";
-
-    const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: [
-        { role: "user", parts: [...parts, { text: extraInstruction }] },
-      ],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: isFlashcard ? flashcardSchema : quizSchema,
-        systemInstruction: isFlashcard
-          ? "You are a study assistant generating flashcards. Each card: clear question on front, concise answer on back."
-          : "You are a study assistant creating multiple-choice questions testing understanding of key concepts.",
+          const extraSet: Record<string, unknown> = {};
+          if (isFirstMessage) {
+            extraSet.name = await generateChatName(message, fullText);
+          }
+          await pushMessage(
+            chatId,
+            { id: new ObjectId().toString(), role: "assistant", content: fullText, type: "text", createdAt: new Date().toISOString() },
+            extraSet,
+            db
+          );
+        } finally {
+          controller.close();
+        }
       },
     });
 
-    const jsonText = response.text ?? "{}";
-    const parsed = JSON.parse(jsonText);
-    const type = isFlashcard ? "flashcards" : "quiz";
-
-    const assistantMsg: StoredMessage = {
-      id: new ObjectId().toString(),
-      role: "assistant",
-      content: parsed,
-      type,
-      createdAt: new Date().toISOString(),
-    };
-    const extraSet: Record<string, unknown> = {};
-    if (isFirstMessage) {
-      extraSet.name = await generateChatName(
-        message,
-        isFlashcard ? "Flashcards generated" : "Quiz questions generated"
-      );
-    }
-    await pushMessage(chatId, assistantMsg, extraSet, db);
-
-    return NextResponse.json({ type, content: parsed });
+    return new Response(readable, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-cache",
+        "X-Generate-Flashcards": flags.generateFlashcards ? "true" : "false",
+        "X-Generate-Quiz": flags.generateQuiz ? "true" : "false",
+      },
+    });
   } catch (err) {
     console.error("Chat API error:", err);
-    const msg = err instanceof Error ? err.message : "Internal server error";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Internal server error" }, { status: 500 });
   }
 }

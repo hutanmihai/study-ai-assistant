@@ -246,6 +246,16 @@
   transform: rotateY(180deg);
 }
 
+/* All interactive elements get pointer cursor */
+button,
+[role="button"],
+a,
+label[for],
+select,
+summary {
+  cursor: pointer;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 0.01ms !important;
