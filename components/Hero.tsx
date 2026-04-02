@@ -154,7 +154,7 @@ export default function Hero() {
 
               <div className="space-y-3">
                 <div className="flex gap-3">
-                  <div className="w-7 h-7 rounded-full bg-[#2563eb] flex items-center justify-center text-xs text-white shrink-0 mt-0.5">
+                  <div className="w-8 h-8 rounded-full bg-[#374151] flex items-center justify-center text-xs text-white shrink-0 mt-1 font-bold">
                     U
                   </div>
                   <div className="bg-white/10 rounded-2xl rounded-tl-none px-4 py-2 text-sm text-[#fffffe]">
