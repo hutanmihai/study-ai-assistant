@@ -41,14 +41,14 @@ export default function FlashcardDisplay({ flashcards }: FlashcardDisplayProps) 
   const card = flashcards[currentIndex];
 
   return (
-    <div className="w-full max-w-lg">
-      {/* Counter */}
+    <div className="w-full max-w-2xl">
+      {/* Counter + dots */}
       <div className="flex items-center justify-between mb-3">
         <span className="text-xs text-[#a8a4c4] font-medium">
           Card {currentIndex + 1} of {flashcards.length}
         </span>
-        <div className="flex gap-1">
-          {flashcards.map((_, i) => (
+        <div className="flex gap-1 flex-wrap justify-end max-w-[60%]">
+          {flashcards.slice(0, 20).map((_, i) => (
             <button
               key={i}
               onClick={() => {
@@ -64,46 +64,62 @@ export default function FlashcardDisplay({ flashcards }: FlashcardDisplayProps) 
         </div>
       </div>
 
-      {/* Flip card */}
+      {/* Flip card — auto height with min */}
       <div
-        className="flip-card w-full h-48 cursor-pointer"
+        className="flip-card w-full cursor-pointer"
+        style={{ minHeight: "200px" }}
         onClick={handleFlip}
         role="button"
         tabIndex={0}
         onKeyDown={(e) => e.key === "Enter" && handleFlip()}
-        aria-label={isFlipped ? "Card back — click to flip to front" : "Card front — click to flip"}
+        aria-label={
+          isFlipped
+            ? "Card back — click to flip to front"
+            : "Card front — click to flip"
+        }
       >
-        <div className={`flip-card-inner w-full h-full relative ${isFlipped ? "flipped" : ""}`}>
+        <div
+          className={`flip-card-inner w-full relative ${isFlipped ? "flipped" : ""}`}
+          style={{ minHeight: "200px" }}
+        >
           {/* Front */}
-          <div className="flip-card-front absolute inset-0 bg-[#1a1830] border border-[#7c3aed]/30 rounded-2xl p-6 flex flex-col">
-            <div className="flex items-center justify-between mb-3">
+          <div
+            className="flip-card-front absolute inset-0 bg-[#1a1830] border border-[#7c3aed]/30 rounded-2xl p-6 flex flex-col"
+            style={{ minHeight: "200px", height: "100%" }}
+          >
+            <div className="flex items-center justify-between mb-3 shrink-0">
               <span className="text-xs text-[#7c3aed] font-medium uppercase tracking-wider">
                 Question
               </span>
               <RotateCw className="w-4 h-4 text-[#a8a4c4]" />
             </div>
-            <div className="flex-1 flex items-center justify-center">
-              <p className="text-white text-center font-medium leading-relaxed">
+            <div className="flex-1 flex items-center justify-center overflow-y-auto py-2">
+              <p className="text-white text-center font-medium leading-relaxed text-sm sm:text-base">
                 {card.front}
               </p>
             </div>
-            <p className="text-xs text-[#a8a4c4] text-center mt-2">
+            <p className="text-xs text-[#a8a4c4] text-center mt-3 shrink-0">
               Click to reveal answer
             </p>
           </div>
 
           {/* Back */}
-          <div className="flip-card-back absolute inset-0 bg-[#7c3aed]/10 border border-[#7c3aed]/40 rounded-2xl p-6 flex flex-col">
-            <div className="flex items-center justify-between mb-3">
+          <div
+            className="flip-card-back absolute inset-0 bg-[#7c3aed]/10 border border-[#7c3aed]/40 rounded-2xl p-6 flex flex-col"
+            style={{ minHeight: "200px", height: "100%" }}
+          >
+            <div className="flex items-center justify-between mb-3 shrink-0">
               <span className="text-xs text-[#f59e0b] font-medium uppercase tracking-wider">
                 Answer
               </span>
               <RotateCw className="w-4 h-4 text-[#a8a4c4]" />
             </div>
-            <div className="flex-1 flex items-center justify-center">
-              <p className="text-white text-center leading-relaxed">{card.back}</p>
+            <div className="flex-1 overflow-y-auto py-2">
+              <p className="text-white text-center leading-relaxed text-sm sm:text-base">
+                {card.back}
+              </p>
             </div>
-            <p className="text-xs text-[#a8a4c4] text-center mt-2">
+            <p className="text-xs text-[#a8a4c4] text-center mt-3 shrink-0">
               Click to flip back
             </p>
           </div>
