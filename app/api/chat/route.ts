@@ -157,7 +157,7 @@ export async function POST(req: NextRequest) {
             contents: [{ role: "user", parts }],
             config: {
               systemInstruction:
-                "You are a helpful study assistant. Answer questions based on the provided course material. If no PDF is provided, answer from general knowledge but suggest uploading course material for more accurate answers. Use markdown for structure where helpful.",
+                "You are a helpful study assistant. Answer questions based on the provided course material. If no PDF is provided, answer from general knowledge but suggest uploading course material for more accurate answers. Use markdown for structure where helpful. CRITICAL RULE: When the user asks for flashcards or a quiz (or both), you MUST respond with only a short, friendly confirmation like 'I will create them for you right away!' or 'Sure, generating your quiz now!'. You MUST NOT generate any flashcard or quiz content yourself — that is handled by a separate system. Do not list questions, answers, cards, or any study content in your response.",
             },
           });
 
