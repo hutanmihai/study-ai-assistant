@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { CheckCircle, XCircle, Trophy } from "lucide-react";
+import { QuizResultQuestion } from "@/lib/types";
 
 interface Question {
   question: string;
@@ -11,17 +12,27 @@ interface Question {
   explanation: string;
 }
 
-interface QuizDisplayProps {
-  questions: Question[];
+interface QuizCompletionData {
+  questions: QuizResultQuestion[];
+  score: number;
+  totalQuestions: number;
 }
 
-export default function QuizDisplay({ questions }: QuizDisplayProps) {
+interface QuizDisplayProps {
+  questions: Question[];
+  onComplete?: (data: QuizCompletionData) => void;
+}
+
+export default function QuizDisplay({ questions, onComplete }: QuizDisplayProps) {
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [showExplanation, setShowExplanation] = useState(false);
   const [score, setScore] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
   const [answeredCount, setAnsweredCount] = useState(0);
+  const [userAnswers, setUserAnswers] = useState<(number | null)[]>(
+    () => questions.map(() => null)
+  );
 
   if (!questions || questions.length === 0) {
     return <div className="text-[#a8a4c4] text-sm">No questions generated.</div>;
@@ -89,10 +100,28 @@ export default function QuizDisplay({ questions }: QuizDisplayProps) {
       setScore((s) => s + 1);
     }
     setAnsweredCount((c) => c + 1);
+    setUserAnswers((prev) => {
+      const next = [...prev];
+      next[currentQuestion] = idx;
+      return next;
+    });
   };
 
   const handleNext = () => {
     if (currentQuestion === questions.length - 1) {
+      // score already reflects the current question (updated in handleSelect)
+      const finalScore = Math.round((score / questions.length) * 100);
+      onComplete?.({
+        questions: questions.map((question, i) => ({
+          ...question,
+          userAnswer: i === currentQuestion ? selectedAnswer : userAnswers[i],
+          isCorrect: i === currentQuestion
+            ? selectedAnswer === question.correctIndex
+            : userAnswers[i] === question.correctIndex,
+        })),
+        score: finalScore,
+        totalQuestions: questions.length,
+      });
       setIsComplete(true);
     } else {
       setCurrentQuestion((c) => c + 1);

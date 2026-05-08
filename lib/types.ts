@@ -15,3 +15,32 @@ export interface ChatSummary {
   messageCount: number;
   activePdfName?: string;
 }
+
+export interface QuizResultQuestion {
+  question: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string;
+  userAnswer: number | null;
+  isCorrect: boolean;
+}
+
+export interface QuizResult {
+  chatId: string;
+  quizMessageId: string;
+  pdfName?: string;
+  questions: QuizResultQuestion[];
+  score: number;
+  totalQuestions: number;
+}
+
+export interface WeakSpotAnalysis {
+  weakTopics: string[];
+  summary: string;
+  miniQuiz: {
+    question: string;
+    options: string[];
+    correctIndex: number;
+    explanation: string;
+  }[];
+}

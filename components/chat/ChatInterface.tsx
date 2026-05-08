@@ -13,6 +13,7 @@ import {
   BookOpen,
   ClipboardList,
   ExternalLink,
+  Target,
 } from "lucide-react";
 import FlashcardDisplay from "./FlashcardDisplay";
 import QuizDisplay from "./QuizDisplay";
@@ -23,7 +24,7 @@ import StudyMaterialSheet, {
   Question,
 } from "./StudyMaterialSheet";
 import Link from "next/link";
-import { ChatSummary, StoredMessage } from "@/lib/types";
+import { ChatSummary, StoredMessage, WeakSpotAnalysis, QuizResultQuestion } from "@/lib/types";
 
 interface Message {
   id: string;
@@ -51,6 +52,14 @@ interface SheetState {
   flashcards?: Flashcard[];
   questions?: Question[];
   defaultTab?: "flashcards" | "quiz";
+  quizMessageId?: string;
+  weakspot?: WeakSpotAnalysis;
+}
+
+interface QuizCompletionData {
+  questions: QuizResultQuestion[];
+  score: number;
+  totalQuestions: number;
 }
 
 export default function ChatInterface() {
@@ -72,6 +81,8 @@ export default function ChatInterface() {
   // Loading indicators for parallel structured calls
   const [loadingFlashcards, setLoadingFlashcards] = useState(false);
   const [loadingQuiz, setLoadingQuiz] = useState(false);
+  const [loadingAnalysis, setLoadingAnalysis] = useState(false);
+  const [hasQuizResults, setHasQuizResults] = useState(false);
 
   const { user } = useUser();
   const userInitial = (
@@ -101,6 +112,13 @@ export default function ChatInterface() {
   useEffect(() => {
     loadChats();
   }, [loadChats]);
+
+  useEffect(() => {
+    fetch("/api/quiz-results")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: unknown[]) => { if (data.length > 0) setHasQuizResults(true); })
+      .catch(() => {});
+  }, []);
 
   const loadChat = useCallback(async (id: string) => {
     setIsLoading(true);
@@ -168,8 +186,46 @@ export default function ChatInterface() {
       setSheetState({ flashcards: (msg.content as { flashcards: Flashcard[] }).flashcards, defaultTab: "flashcards" });
       setSheetOpen(true);
     } else if (msg.type === "quiz" && typeof msg.content === "object" && "questions" in msg.content) {
-      setSheetState({ questions: (msg.content as { questions: Question[] }).questions, defaultTab: "quiz" });
+      setSheetState({ questions: (msg.content as { questions: Question[] }).questions, defaultTab: "quiz", quizMessageId: msg.id });
       setSheetOpen(true);
+    }
+  };
+
+  const handleQuizComplete = useCallback(async (data: QuizCompletionData) => {
+    if (!chatId) return;
+    try {
+      await fetch("/api/quiz-results", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chatId,
+          quizMessageId: sheetState.quizMessageId ?? "",
+          questions: data.questions,
+          score: data.score,
+          totalQuestions: data.totalQuestions,
+        }),
+      });
+      setHasQuizResults(true);
+    } catch (err) {
+      console.error("Failed to save quiz result:", err);
+    }
+  }, [chatId, sheetState.quizMessageId]);
+
+  const handleAnalyzeWeakSpots = async () => {
+    setLoadingAnalysis(true);
+    try {
+      const res = await fetch("/api/analyze-weak-spots", { method: "POST" });
+      if (res.ok) {
+        const analysis = await res.json();
+        setSheetState({ weakspot: analysis });
+        setSheetOpen(true);
+      } else {
+        setError("Not enough quiz data to analyze yet. Complete at least one quiz first.");
+      }
+    } catch {
+      setError("Failed to run analysis. Please try again.");
+    } finally {
+      setLoadingAnalysis(false);
     }
   };
 
@@ -294,14 +350,15 @@ export default function ChatInterface() {
             .then((r) => r.json())
             .then((data) => {
               if (data.content?.questions) {
+                const msgId = data.messageId ?? Date.now().toString();
                 const msg: Message = {
-                  id: data.messageId ?? Date.now().toString(),
+                  id: msgId,
                   role: "assistant",
                   content: data.content,
                   type: "quiz",
                 };
                 setMessages((prev) => [...prev, msg]);
-                setSheetState((prev) => ({ ...prev, questions: data.content.questions, defaultTab: prev.flashcards ? prev.defaultTab : "quiz" }));
+                setSheetState((prev) => ({ ...prev, questions: data.content.questions, defaultTab: prev.flashcards ? prev.defaultTab : "quiz", quizMessageId: msgId }));
                 setSheetOpen(true);
               }
             })
@@ -556,6 +613,22 @@ export default function ChatInterface() {
 
           {/* Input */}
           <div className="px-4 sm:px-6 pb-6 shrink-0">
+            {hasQuizResults && (
+              <div className="mb-3">
+                <button
+                  onClick={handleAnalyzeWeakSpots}
+                  disabled={loadingAnalysis}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl border border-[#7c3aed]/30 bg-[#7c3aed]/10 hover:bg-[#7c3aed]/20 hover:border-[#7c3aed]/50 text-sm text-[#c4b5fd] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  {loadingAnalysis ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Target className="w-4 h-4" />
+                  )}
+                  {loadingAnalysis ? "Analyzing…" : "Analyze Weak Spots"}
+                </button>
+              </div>
+            )}
             {pdfName && (
               <div className="mb-3 flex items-center gap-3 bg-[#1a1830] border border-white/10 rounded-xl px-4 py-2.5 w-fit max-w-xs">
                 <div className="w-6 h-8 bg-red-500/20 border border-red-500/30 rounded flex items-center justify-center shrink-0">
@@ -632,6 +705,8 @@ export default function ChatInterface() {
         flashcards={sheetState.flashcards}
         questions={sheetState.questions}
         defaultTab={sheetState.defaultTab}
+        weakspot={sheetState.weakspot}
+        onQuizComplete={handleQuizComplete}
       />
     </div>
   );

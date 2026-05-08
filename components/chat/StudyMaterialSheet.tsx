@@ -9,6 +9,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import FlashcardDisplay from "./FlashcardDisplay";
 import QuizDisplay from "./QuizDisplay";
+import WeakSpotReport from "./WeakSpotReport";
+import { WeakSpotAnalysis, QuizResultQuestion } from "@/lib/types";
 
 export interface Flashcard {
   front: string;
@@ -22,13 +24,20 @@ export interface Question {
   explanation: string;
 }
 
+interface QuizCompletionData {
+  questions: QuizResultQuestion[];
+  score: number;
+  totalQuestions: number;
+}
+
 interface Props {
   open: boolean;
   onClose: () => void;
   flashcards?: Flashcard[];
   questions?: Question[];
-  /** Which tab to show first when both are present */
   defaultTab?: "flashcards" | "quiz";
+  weakspot?: WeakSpotAnalysis;
+  onQuizComplete?: (data: QuizCompletionData) => void;
 }
 
 export default function StudyMaterialSheet({
@@ -37,6 +46,8 @@ export default function StudyMaterialSheet({
   flashcards,
   questions,
   defaultTab = "flashcards",
+  weakspot,
+  onQuizComplete,
 }: Props) {
   const hasBoth = !!(flashcards?.length && questions?.length);
   const hasFlashcards = !!flashcards?.length;
@@ -59,7 +70,9 @@ export default function StudyMaterialSheet({
             className="text-white text-lg"
             style={{ fontFamily: "var(--font-display, Fraunces, serif)" }}
           >
-            {hasBoth
+            {weakspot
+              ? "Weak Spot Analysis"
+              : hasBoth
               ? "Study Materials"
               : hasFlashcards
               ? "Flashcards"
@@ -68,7 +81,11 @@ export default function StudyMaterialSheet({
         </SheetHeader>
 
         <div className="flex-1 overflow-hidden flex flex-col px-6 pb-6 pt-4">
-          {hasBoth ? (
+          {weakspot ? (
+            <div className="flex-1 overflow-y-auto">
+              <WeakSpotReport analysis={weakspot} />
+            </div>
+          ) : hasBoth ? (
             <Tabs
               defaultValue={activeDefault}
               className="flex flex-col flex-1 overflow-hidden"
@@ -98,7 +115,7 @@ export default function StudyMaterialSheet({
                 value="quiz"
                 className="flex-1 overflow-y-auto mt-0"
               >
-                <QuizDisplay questions={questions!} />
+                <QuizDisplay questions={questions!} onComplete={onQuizComplete} />
               </TabsContent>
             </Tabs>
           ) : hasFlashcards ? (
@@ -107,7 +124,7 @@ export default function StudyMaterialSheet({
             </div>
           ) : hasQuiz ? (
             <div className="flex-1 overflow-y-auto">
-              <QuizDisplay questions={questions!} />
+              <QuizDisplay questions={questions!} onComplete={onQuizComplete} />
             </div>
           ) : (
             <div className="flex-1 flex items-center justify-center">
