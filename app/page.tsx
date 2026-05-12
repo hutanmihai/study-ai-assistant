@@ -5,6 +5,7 @@ import Hero from "@/components/Hero";
 import MediaSection from "@/components/MediaSection";
 import Benefits from "@/components/Benefits";
 import Testimonials from "@/components/Testimonials";
+import Pricing from "@/components/Pricing";
 import FAQ from "@/components/FAQ";
 import FinalCTA from "@/components/FinalCTA";
 import Footer from "@/components/Footer";
@@ -23,6 +24,7 @@ export default async function Home() {
       <MediaSection />
       <Benefits />
       <Testimonials />
+      <Pricing />
       <FAQ />
       <FinalCTA />
       <Footer />

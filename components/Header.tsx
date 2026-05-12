@@ -58,6 +58,12 @@ export default function Header() {
           >
             Testimonials
           </a>
+          <a
+            href="#pricing"
+            className="text-sm text-[#a8a4c4] hover:text-white transition-colors duration-200"
+          >
+            Pricing
+          </a>
         </nav>
 
         {/* Auth area */}
